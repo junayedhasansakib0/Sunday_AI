@@ -2589,3 +2589,162 @@ input:focus-visible {
     font-weight: 600;
 }
 
+/* In-Browser Camera Scanner UI */
+.auth-camera-view {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: message-in 240ms ease both;
+}
+
+.camera-feed-container {
+    position: relative;
+    width: 100%;
+    height: 260px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: #030508;
+    border: 1px solid rgba(93, 233, 244, 0.3);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(0, 0, 0, 0.8);
+}
+
+.camera-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+.camera-overlay-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.scanner-laser {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan-core), #fff, var(--cyan-core), transparent);
+    box-shadow: 0 0 12px var(--cyan-core), 0 0 24px var(--cyan-core);
+    z-index: 3;
+    pointer-events: none;
+    animation: laser-sweep 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes laser-sweep {
+    0% { top: 6%; opacity: 0.8; }
+    50% { opacity: 1; }
+    100% { top: 92%; opacity: 0.8; }
+}
+
+.scanner-hud-reticle {
+    position: absolute;
+    inset: 18px;
+    border: 1px dashed rgba(93, 233, 244, 0.35);
+    border-radius: 12px;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.scanner-hud-reticle::before,
+.scanner-hud-reticle::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-color: var(--cyan-core);
+    border-style: solid;
+}
+
+.scanner-hud-reticle::before {
+    top: -1px;
+    left: -1px;
+    border-width: 3px 0 0 3px;
+    border-top-left-radius: 6px;
+}
+
+.scanner-hud-reticle::after {
+    bottom: -1px;
+    right: -1px;
+    border-width: 0 3px 3px 0;
+    border-bottom-right-radius: 6px;
+}
+
+.camera-status-pill {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    background: rgba(8, 12, 20, 0.82);
+    border: 1px solid rgba(93, 233, 244, 0.3);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--cyan-bright);
+    backdrop-filter: blur(8px);
+}
+
+.camera-status-pill .cam-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ff4757;
+    animation: status-pulse 1.4s infinite;
+}
+
+.camera-status-pill.granted .cam-dot {
+    background: var(--emerald-auth);
+}
+
+.camera-actions-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.capture-progress-dots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.capture-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+
+.capture-dot.captured {
+    background: rgba(83, 230, 165, 0.18);
+    border-color: var(--emerald-auth);
+    color: #a4f4cf;
+    box-shadow: 0 0 10px rgba(83, 230, 165, 0.3);
+}
+
+.capture-dot.active {
+    border-color: var(--cyan-core);
+    color: var(--cyan-bright);
+    background: rgba(93, 233, 244, 0.15);
+    animation: status-pulse 1.8s infinite;
+}
+
+

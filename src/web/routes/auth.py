@@ -1,32 +1,54 @@
-import asyncio
-import logging
 import os
+import base64
+import logging
+import asyncio
+import numpy as np
+import cv2
+import face_recognition
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from src.face_recognition import FaceRecognizer, AUTHORIZED_DIR
 from src.authentication import AuthenticationManager
 from src.assistant.state import AssistantState
 from src.web.websocket import ws_manager
-from main import face_login
-from register_face import register_face
 
 logger = logging.getLogger("sunday.routes.auth")
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-class RegisterRequest(BaseModel):
+class VerifyFrameRequest(BaseModel):
+    image: str  # Base64 data URL
+
+
+class RegisterFrameRequest(BaseModel):
     name: str
+    image: str
+    shot_index: int  # 1 to 5
 
 
 class QuickLoginRequest(BaseModel):
     name: str
 
 
+def decode_base64_image(image_data: str) -> Optional[np.ndarray]:
+    """Decodes a base64 JPEG/PNG data URL or raw base64 string into an OpenCV BGR image."""
+    try:
+        if "," in image_data:
+            image_data = image_data.split(",", 1)[1]
+        image_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        return frame
+    except Exception as e:
+        logger.error(f"Error decoding base64 image: {e}")
+        return None
+
+
 @router.get("/status")
 async def get_auth_status(request: Request):
-    """Returns the current authentication status and user details."""
+    """Returns current session authentication status."""
     state: AssistantState = getattr(request.app.state, "assistant_state", None)
     return {
         "authenticated": state.is_authenticated if state else False,
@@ -36,7 +58,7 @@ async def get_auth_status(request: Request):
 
 @router.get("/users")
 async def get_registered_users():
-    """Returns a list of authorized user profile names registered in the system."""
+    """Returns a list of authorized user profile names."""
     users = []
     if os.path.exists(AUTHORIZED_DIR):
         for item in os.listdir(AUTHORIZED_DIR):
@@ -45,12 +67,16 @@ async def get_registered_users():
     return {"users": users, "count": len(users)}
 
 
-@router.post("/face-login")
-async def trigger_face_login(request: Request):
+@router.post("/verify-frame")
+async def verify_webcam_frame(req: VerifyFrameRequest, request: Request):
     """
-    Activates the camera to verify user identity against known authorized face profiles.
-    Runs asynchronously in a worker thread so the server remains responsive.
+    Processes a live snapshot frame captured from the browser's webcam.
+    Performs face recognition against authorized encodings.
     """
+    frame = decode_base64_image(req.image)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Invalid image data received.")
+
     state: AssistantState = getattr(request.app.state, "assistant_state", None)
     auth_manager: AuthenticationManager = getattr(request.app.state, "auth_manager", None)
     recognizer: FaceRecognizer = getattr(request.app.state, "face_recognizer", None)
@@ -59,109 +85,117 @@ async def trigger_face_login(request: Request):
         recognizer = FaceRecognizer()
         request.app.state.face_recognizer = recognizer
 
-    # Broadcast camera active
-    await ws_manager.broadcast({
-        "event": "camera_status_change",
-        "data": {"status": "ACTIVE", "mode": "SCANNING"}
-    })
-
-    try:
-        # Run face_login in thread
-        authenticated_user = await asyncio.to_thread(face_login, recognizer, state, auth_manager)
-
-        if authenticated_user:
-            # Broadcast successful authentication
-            await ws_manager.broadcast({
-                "event": "auth_status_change",
-                "data": {"authenticated": True, "user": authenticated_user}
-            })
-            return {
-                "success": True,
-                "user": authenticated_user,
-                "message": f"Biometric verification successful. Welcome, {authenticated_user}!"
-            }
-        else:
-            return {
-                "success": False,
-                "user": None,
-                "message": "Face verification cancelled or unrecognized."
-            }
-    except Exception as e:
-        logger.error(f"Error during face login: {e}", exc_info=True)
+    if not recognizer.known_face_names:
         return {
             "success": False,
+            "authenticated": False,
             "user": None,
-            "message": f"Face verification error: {str(e)}"
+            "face_detected": False,
+            "message": "No authorized face profiles registered in system. Please register a face first."
         }
-    finally:
+
+    # Run recognition in thread pool to avoid blocking the async event loop
+    face_locations, names = await asyncio.to_thread(recognizer.recognize, frame)
+
+    authenticated_user = None
+    detected_faces = []
+
+    for (top, right, bottom, left), name in zip(face_locations, names):
+        # Scale back coordinates up by 4 (since recognize scales down by 0.25)
+        top *= 4
+        right *= 4
+        bottom *= 4
+        left *= 4
+        is_auth = (name != "Unknown")
+        detected_faces.append({
+            "name": name,
+            "authorized": is_auth,
+            "box": {"top": int(top), "right": int(right), "bottom": int(bottom), "left": int(left)}
+        })
+        if is_auth and not authenticated_user:
+            authenticated_user = name
+
+    if authenticated_user:
+        if state:
+            state.authenticate(authenticated_user)
+        if auth_manager:
+            auth_manager.authenticate(authenticated_user)
+
+        # Broadcast authentication to open WebSocket sessions
         await ws_manager.broadcast({
-            "event": "camera_status_change",
-            "data": {"status": "STANDBY", "mode": "IDLE"}
+            "event": "auth_status_change",
+            "data": {"authenticated": True, "user": authenticated_user}
         })
 
+        return {
+            "success": True,
+            "authenticated": True,
+            "user": authenticated_user,
+            "face_detected": True,
+            "faces": detected_faces,
+            "message": f"Biometric verification successful. Welcome, {authenticated_user}!"
+        }
 
-@router.post("/register-face")
-async def trigger_register_face(req: RegisterRequest, request: Request):
+    return {
+        "success": False,
+        "authenticated": False,
+        "user": None,
+        "face_detected": len(face_locations) > 0,
+        "faces": detected_faces,
+        "message": "Face detected but not recognized." if face_locations else "Scanning for face..."
+    }
+
+
+@router.post("/register-frame")
+async def register_webcam_frame(req: RegisterFrameRequest, request: Request):
     """
-    Initiates the 5-photo camera capture routine to register a new authorized face profile.
+    Saves a captured snapshot frame from browser webcam into user dataset folder.
+    When 5 photos are reached, reloads known encodings in memory.
     """
     name = req.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Name cannot be empty.")
+        raise HTTPException(status_code=400, detail="Profile name cannot be empty.")
 
-    recognizer: FaceRecognizer = getattr(request.app.state, "face_recognizer", None)
+    # Sanitize name
+    safe_name = "".join(c for c in name if c.isalnum() or c in (" ", "_", "-")).strip()
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid profile name.")
 
-    # Broadcast camera active
-    await ws_manager.broadcast({
-        "event": "camera_status_change",
-        "data": {"status": "ACTIVE", "mode": "REGISTERING"}
-    })
+    frame = decode_base64_image(req.image)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Invalid image data.")
 
-    try:
-        # Run registration routine in worker thread
-        success, registered_name = await asyncio.to_thread(register_face, name)
+    save_dir = os.path.join(AUTHORIZED_DIR, safe_name)
+    os.makedirs(save_dir, exist_ok=True)
 
-        if success:
-            # Reload face encodings in memory
-            if recognizer:
-                await asyncio.to_thread(recognizer.load_known_faces)
+    shot_idx = max(1, min(req.shot_index, 5))
+    photo_path = os.path.join(save_dir, f"{safe_name}_{shot_idx}.jpg")
+    cv2.imwrite(photo_path, frame)
 
-            # Broadcast registration event
-            await ws_manager.broadcast({
-                "event": "register_success",
-                "data": {"name": registered_name}
-            })
+    is_completed = (shot_idx >= 5)
 
-            return {
-                "success": True,
-                "name": registered_name,
-                "message": f"Face profile registered successfully for {registered_name}."
-            }
-        else:
-            return {
-                "success": False,
-                "name": name,
-                "message": "Face registration was cancelled or failed to capture required frames."
-            }
-    except Exception as e:
-        logger.error(f"Error during face registration: {e}", exc_info=True)
-        return {
-            "success": False,
-            "name": name,
-            "message": f"Registration error: {str(e)}"
-        }
-    finally:
+    if is_completed:
+        recognizer: FaceRecognizer = getattr(request.app.state, "face_recognizer", None)
+        if recognizer:
+            await asyncio.to_thread(recognizer.load_known_faces)
+
         await ws_manager.broadcast({
-            "event": "camera_status_change",
-            "data": {"status": "STANDBY", "mode": "IDLE"}
+            "event": "register_success",
+            "data": {"name": safe_name}
         })
+
+    return {
+        "success": True,
+        "completed": is_completed,
+        "saved_shot": shot_idx,
+        "name": safe_name,
+        "message": f"Photo {shot_idx}/5 saved successfully." if not is_completed else f"Face registration completed for '{safe_name}'!"
+    }
 
 
 @router.post("/quick-login")
 async def quick_login(req: QuickLoginRequest, request: Request):
-    """
-    Direct profile selection login for authorized profiles or development testing.
-    """
+    """Direct profile selection for development or quick access."""
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name is required.")
@@ -188,7 +222,7 @@ async def quick_login(req: QuickLoginRequest, request: Request):
 
 @router.post("/logout")
 async def perform_logout(request: Request):
-    """Locks the Sunday AI session and clears current authentication state."""
+    """Locks the Sunday AI session."""
     state: AssistantState = getattr(request.app.state, "assistant_state", None)
     auth_manager: AuthenticationManager = getattr(request.app.state, "auth_manager", None)
 

@@ -15,7 +15,7 @@ class AIBrain:
 
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = model or os.getenv("AI_MODEL", "gemini-1.5-flash")
+        self.model = model or os.getenv("AI_MODEL", "gemini-3.5-flash-lite")
         self.session = requests.Session()
         self.system_prompt = (
             "You are Sunday, a smart, polite, and helpful desktop AI personal assistant. "
@@ -35,10 +35,12 @@ class AIBrain:
                 "Please configure GEMINI_API_KEY in your .env file."
             )
 
-        # Primary and fallback models
-        models_to_try = [self.model]
-        if "gemini-1.5-flash" not in models_to_try:
-            models_to_try.append("gemini-1.5-flash")
+        # Candidates in priority order
+        candidates = [self.model, "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-flash-latest"]
+        models_to_try = []
+        for m in candidates:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
 
         payload = {
             "contents": [
@@ -58,8 +60,9 @@ class AIBrain:
 
         last_error = None
         for model_name in models_to_try:
+            clean_model = model_name.replace("models/", "")
             url = (
-                f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+                f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent"
                 f"?key={self.api_key}"
             )
 
@@ -68,9 +71,9 @@ class AIBrain:
 
                 if response.status_code == 200:
                     data = response.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
+                    candidates_resp = data.get("candidates", [])
+                    if candidates_resp:
+                        parts = candidates_resp[0].get("content", {}).get("parts", [])
                         if parts and "text" in parts[0]:
                             return parts[0]["text"].strip()
                     return "I received an empty response from the AI model."

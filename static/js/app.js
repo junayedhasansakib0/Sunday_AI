@@ -1,6 +1,7 @@
 /**
- * Sunday AI Web Dashboard — Client Logic & Neural Link Manager
- * Real-time WebSocket bridge, Biometric/Quick Auth, Web Speech API Voice Engine, and Telemetry.
+ * Sunday AI Web Dashboard — Client Logic & In-Browser Neural Link Manager
+ * Real-time In-Browser WebRTC Camera Face Verification & Registration,
+ * Web Speech API Voice Engine, WebSocket Sync, and Telemetry.
  */
 
 class SundayApp {
@@ -13,6 +14,14 @@ class SundayApp {
         this.speechRecognition = null;
         this.isAuthenticated = false;
         this.registeredUsers = [];
+
+        // Camera stream state
+        this.mediaStream = null;
+        this.cameraMode = null; // 'login' | 'register'
+        this.cameraScanningTimer = null;
+        this.isVerifyingFrame = false;
+        this.registerName = null;
+        this.registerShotCount = 0;
 
         // DOM Elements
         this.dom = {
@@ -58,7 +67,20 @@ class SundayApp {
             btnCancelRegister: document.getElementById('btn-cancel-registration'),
             registerNameInput: document.getElementById('register-name-input'),
             quickProfilesContainer: document.getElementById('quick-profiles-container'),
-            quickProfilesList: document.getElementById('quick-profiles-list')
+            quickProfilesList: document.getElementById('quick-profiles-list'),
+
+            // In-Browser Camera Elements
+            authCameraView: document.getElementById('auth-camera-view'),
+            webcamVideo: document.getElementById('webcam-video'),
+            webcamOverlay: document.getElementById('webcam-overlay'),
+            webcamSnapshot: document.getElementById('webcam-snapshot'),
+            scannerLaser: document.getElementById('scanner-laser'),
+            cameraStatusPill: document.getElementById('camera-status-pill'),
+            cameraStatusPillText: document.getElementById('camera-status-pill-text'),
+            btnStopCamera: document.getElementById('btn-stop-camera'),
+            cameraRegControls: document.getElementById('camera-reg-controls'),
+            btnTakeSnapshot: document.getElementById('btn-take-snapshot'),
+            currentShotNum: document.getElementById('current-shot-num')
         };
 
         this.startTime = Date.now();
@@ -73,7 +95,7 @@ class SundayApp {
         this.startUptimeTracker();
 
         // Initial welcome message
-        this.appendMessage('assistant', 'Sunday AI Neural Core online. Authenticate via Face Recognition or select a profile to unlock command execution.');
+        this.appendMessage('assistant', 'Sunday AI Neural Core online. Verify via Face ID or select a profile to unlock command execution.');
     }
 
     /* -------------------------------------------------------------------------- */
@@ -83,11 +105,10 @@ class SundayApp {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-        console.log(`[Sunday Neural Link] Connecting to ${wsUrl}...`);
         try {
             this.socket = new WebSocket(wsUrl);
         } catch (err) {
-            console.error('[Sunday Neural Link] Could not instantiate WebSocket:', err);
+            console.error('[Sunday Neural Link] WebSocket creation failed:', err);
             this.updateConnectionStatus(false);
             return;
         }
@@ -163,26 +184,11 @@ class SundayApp {
                 }
                 break;
 
-            case 'camera_status_change':
-                if (this.dom.cameraStatus && data) {
-                    this.dom.cameraStatus.textContent = data.status || 'STANDBY';
-                    const parentPill = this.dom.cameraStatus.closest('.status-pill');
-                    if (parentPill) {
-                        parentPill.className = `status-pill ${data.status === 'ACTIVE' ? 'online' : 'standby'}`;
-                    }
-                }
-                break;
-
             case 'register_success':
                 if (data && data.name) {
                     this.setAuthAlert(`Registration successful for "${data.name}"!`, 'success', false);
                     this.appendMessage('assistant', `Face dataset saved for user "${data.name}". Database encodings reloaded.`);
-                    setTimeout(() => {
-                        this.dom.authRegisterView.style.display = 'none';
-                        this.dom.authOptionsView.style.display = 'flex';
-                        if (this.dom.registerNameInput) this.dom.registerNameInput.value = '';
-                        this.fetchSystemStatus();
-                    }, 1500);
+                    this.fetchSystemStatus();
                 }
                 break;
 
@@ -194,6 +200,273 @@ class SundayApp {
 
             default:
                 console.log('[WebSocket Event]', event, data);
+        }
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /* IN-BROWSER WEBCAM AUTHENTICATION & REGISTRATION                            */
+    /* -------------------------------------------------------------------------- */
+    async startBrowserCamera(mode = 'login', targetName = null) {
+        this.cameraMode = mode;
+        this.registerName = targetName;
+        this.registerShotCount = 0;
+
+        // Switch modal sub-views
+        if (this.dom.authOptionsView) this.dom.authOptionsView.style.display = 'none';
+        if (this.dom.authRegisterView) this.dom.authRegisterView.style.display = 'none';
+        if (this.dom.authCameraView) this.dom.authCameraView.style.display = 'flex';
+
+        if (mode === 'login') {
+            this.setAuthAlert('Webcam active. Scanning for authorized face...', 'scanning', true);
+            if (this.dom.cameraRegControls) this.dom.cameraRegControls.style.display = 'none';
+            if (this.dom.scannerLaser) this.dom.scannerLaser.style.display = 'block';
+            if (this.dom.cameraStatusPillText) this.dom.cameraStatusPillText.textContent = 'FACE ID SCANNER';
+        } else {
+            this.setAuthAlert(`Profile "${targetName}": Look at camera and click "Capture Shot" (5 required).`, 'info', false);
+            if (this.dom.cameraRegControls) this.dom.cameraRegControls.style.display = 'flex';
+            if (this.dom.scannerLaser) this.dom.scannerLaser.style.display = 'none';
+            if (this.dom.cameraStatusPillText) this.dom.cameraStatusPillText.textContent = `REGISTERING: ${targetName.toUpperCase()}`;
+            this.resetCaptureDots();
+        }
+
+        // Update Top HUD Camera badge
+        if (this.dom.cameraStatus) {
+            this.dom.cameraStatus.textContent = 'ACTIVE';
+            const pill = this.dom.cameraStatus.closest('.status-pill');
+            if (pill) pill.className = 'status-pill online';
+        }
+
+        try {
+            this.mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'user',
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                },
+                audio: false
+            });
+
+            if (this.dom.webcamVideo) {
+                this.dom.webcamVideo.srcObject = this.mediaStream;
+                await this.dom.webcamVideo.play();
+            }
+
+            if (mode === 'login') {
+                this.startFaceScanLoop();
+            }
+        } catch (err) {
+            console.error('[Webcam Error]', err);
+            this.setAuthAlert(`Could not access webcam: ${err.message}. Please allow camera permissions.`, 'error', false);
+            this.stopBrowserCamera();
+        }
+    }
+
+    stopBrowserCamera() {
+        if (this.cameraScanningTimer) {
+            clearInterval(this.cameraScanningTimer);
+            this.cameraScanningTimer = null;
+        }
+
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach(track => track.stop());
+            this.mediaStream = null;
+        }
+
+        if (this.dom.webcamVideo) {
+            this.dom.webcamVideo.srcObject = null;
+        }
+
+        this.clearOverlayCanvas();
+
+        // Reset HUD Camera badge
+        if (this.dom.cameraStatus) {
+            this.dom.cameraStatus.textContent = 'STANDBY';
+            const pill = this.dom.cameraStatus.closest('.status-pill');
+            if (pill) pill.className = 'status-pill standby';
+        }
+
+        if (this.dom.authCameraView) this.dom.authCameraView.style.display = 'none';
+        if (this.dom.authOptionsView) this.dom.authOptionsView.style.display = 'flex';
+        this.cameraMode = null;
+    }
+
+    startFaceScanLoop() {
+        if (this.cameraScanningTimer) clearInterval(this.cameraScanningTimer);
+
+        // Snapshot and send frame every 450ms
+        this.cameraScanningTimer = setInterval(async () => {
+            if (this.isVerifyingFrame || this.cameraMode !== 'login' || !this.mediaStream) return;
+
+            const frameData = this.captureVideoFrameBase64();
+            if (!frameData) return;
+
+            this.isVerifyingFrame = true;
+            try {
+                const res = await fetch('/api/auth/verify-frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: frameData })
+                });
+
+                const data = await res.json();
+                this.handleVerifyFrameResponse(data);
+            } catch (err) {
+                console.warn('[Frame Verify Error]', err);
+            } finally {
+                this.isVerifyingFrame = false;
+            }
+        }, 450);
+    }
+
+    captureVideoFrameBase64() {
+        const video = this.dom.webcamVideo;
+        const canvas = this.dom.webcamSnapshot;
+        if (!video || !canvas || video.videoWidth === 0) return null;
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.85);
+    }
+
+    handleVerifyFrameResponse(data) {
+        if (!data) return;
+
+        // Draw bounding boxes on overlay canvas
+        this.drawFacesOnOverlay(data.faces || []);
+
+        if (data.authenticated && data.user) {
+            // Verification succeeded!
+            if (this.cameraScanningTimer) {
+                clearInterval(this.cameraScanningTimer);
+                this.cameraScanningTimer = null;
+            }
+
+            if (this.dom.cameraStatusPill) this.dom.cameraStatusPill.classList.add('granted');
+            if (this.dom.cameraStatusPillText) this.dom.cameraStatusPillText.textContent = `GRANTED: ${data.user.toUpperCase()}`;
+            this.setAuthAlert(`ACCESS GRANTED: Welcome, ${data.user}!`, 'success', false);
+            this.appendMessage('assistant', `ACCESS GRANTED: Biometric verification verified for ${data.user}. Console unlocked.`);
+
+            setTimeout(() => {
+                this.stopBrowserCamera();
+                this.updateAuthUI(true, data.user);
+            }, 700);
+        } else if (data.face_detected) {
+            this.setAuthAlert('Face detected. Verifying identity encodings...', 'scanning', true);
+        } else {
+            this.setAuthAlert('Camera active. Scanning for authorized face...', 'scanning', true);
+        }
+    }
+
+    drawFacesOnOverlay(faces) {
+        const video = this.dom.webcamVideo;
+        const canvas = this.dom.webcamOverlay;
+        if (!canvas || !video || video.videoWidth === 0) return;
+
+        canvas.width = video.clientWidth;
+        canvas.height = video.clientHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const scaleX = canvas.width / video.videoWidth;
+        const scaleY = canvas.height / video.videoHeight;
+
+        faces.forEach(face => {
+            const { top, right, bottom, left } = face.box;
+            // Mirror coordinates horizontally for mirrored video
+            const boxWidth = (right - left) * scaleX;
+            const boxHeight = (bottom - top) * scaleY;
+            const boxX = canvas.width - (right * scaleX);
+            const boxY = top * scaleY;
+
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = face.authorized ? '#53e6a5' : '#ff4757';
+            ctx.shadowColor = face.authorized ? 'rgba(83, 230, 165, 0.8)' : 'rgba(255, 71, 87, 0.8)';
+            ctx.shadowBlur = 8;
+            ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+            // Label banner
+            ctx.fillStyle = face.authorized ? '#53e6a5' : '#ff4757';
+            ctx.fillRect(boxX, Math.max(0, boxY - 22), Math.max(boxWidth, 120), 22);
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#06080d';
+            ctx.font = 'bold 12px monospace';
+            ctx.fillText(face.name.toUpperCase(), boxX + 6, Math.max(15, boxY - 6));
+        });
+    }
+
+    clearOverlayCanvas() {
+        const canvas = this.dom.webcamOverlay;
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+
+    resetCaptureDots() {
+        for (let i = 1; i <= 5; i++) {
+            const dot = document.getElementById(`dot-${i}`);
+            if (dot) {
+                dot.className = `capture-dot ${i === 1 ? 'active' : ''}`;
+            }
+        }
+        if (this.dom.currentShotNum) this.dom.currentShotNum.textContent = '1';
+    }
+
+    async handleCaptureSnapshot() {
+        if (this.cameraMode !== 'register' || !this.registerName || !this.mediaStream) return;
+
+        const nextShot = this.registerShotCount + 1;
+        if (nextShot > 5) return;
+
+        const frameData = this.captureVideoFrameBase64();
+        if (!frameData) {
+            this.setAuthAlert('Could not capture frame from webcam.', 'error');
+            return;
+        }
+
+        if (this.dom.btnTakeSnapshot) this.dom.btnTakeSnapshot.disabled = true;
+        this.setAuthAlert(`Saving photo ${nextShot}/5 for "${this.registerName}"...`, 'scanning', true);
+
+        try {
+            const res = await fetch('/api/auth/register-frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: this.registerName,
+                    image: frameData,
+                    shot_index: nextShot
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                this.registerShotCount = nextShot;
+                const dot = document.getElementById(`dot-${nextShot}`);
+                if (dot) dot.className = 'capture-dot captured';
+
+                if (data.completed || this.registerShotCount >= 5) {
+                    this.setAuthAlert(`Registration completed for "${this.registerName}"!`, 'success', false);
+                    this.appendMessage('assistant', `Face dataset saved for user "${this.registerName}". Database encodings reloaded.`);
+                    setTimeout(() => {
+                        this.stopBrowserCamera();
+                        this.fetchSystemStatus();
+                    }, 1200);
+                } else {
+                    const nextDot = document.getElementById(`dot-${nextShot + 1}`);
+                    if (nextDot) nextDot.className = 'capture-dot active';
+                    if (this.dom.currentShotNum) this.dom.currentShotNum.textContent = `${nextShot + 1}`;
+                    this.setAuthAlert(`Captured ${nextShot}/5. Click Capture Shot again (${nextShot + 1}/5).`, 'info', false);
+                }
+            } else {
+                this.setAuthAlert(data.message || data.detail || 'Failed to save snapshot.', 'error', false);
+            }
+        } catch (err) {
+            this.setAuthAlert(`Capture error: ${err.message}`, 'error', false);
+        } finally {
+            if (this.dom.btnTakeSnapshot) this.dom.btnTakeSnapshot.disabled = false;
         }
     }
 
@@ -279,7 +552,7 @@ class SundayApp {
         if (this.dom.commandInput) {
             this.dom.commandInput.placeholder = this.isAuthenticated
                 ? "Ask Sunday or run a desktop command..."
-                : "Console locked. Authenticate via Face Recognition...";
+                : "Console locked. Authenticate via Face ID...";
         }
     }
 
@@ -337,14 +610,14 @@ class SundayApp {
 
         // ---------------- AUTH MODAL HANDLERS ---------------- //
         
-        // Option 1: Face Login
+        // Option 1: Face Login (Start In-Browser Webcam)
         if (this.dom.btnFaceLogin) {
             this.dom.btnFaceLogin.addEventListener('click', () => {
-                this.triggerFaceLogin();
+                this.startBrowserCamera('login');
             });
         }
 
-        // Option 2: Register Face (Show Sub-view)
+        // Option 2: Register Face (Show Name Input Sub-view)
         if (this.dom.btnRegisterFace) {
             this.dom.btnRegisterFace.addEventListener('click', () => {
                 this.dom.authOptionsView.style.display = 'none';
@@ -352,7 +625,7 @@ class SundayApp {
                 if (this.dom.registerNameInput) {
                     this.dom.registerNameInput.focus();
                 }
-                this.setAuthAlert('Enter profile name and click Start Capture.', 'info');
+                this.setAuthAlert('Enter profile name and click "Open Camera & Capture".', 'info');
             });
         }
 
@@ -365,10 +638,30 @@ class SundayApp {
             });
         }
 
-        // Start Register Routine
+        // Start Camera for Registration
         if (this.dom.btnStartRegister) {
             this.dom.btnStartRegister.addEventListener('click', () => {
-                this.triggerFaceRegistration();
+                const username = this.dom.registerNameInput ? this.dom.registerNameInput.value.trim() : '';
+                if (!username) {
+                    this.setAuthAlert('Please enter a profile name first.', 'error');
+                    return;
+                }
+                this.startBrowserCamera('register', username);
+            });
+        }
+
+        // Snapshot capture button for registration
+        if (this.dom.btnTakeSnapshot) {
+            this.dom.btnTakeSnapshot.addEventListener('click', () => {
+                this.handleCaptureSnapshot();
+            });
+        }
+
+        // Stop Camera button
+        if (this.dom.btnStopCamera) {
+            this.dom.btnStopCamera.addEventListener('click', () => {
+                this.stopBrowserCamera();
+                this.setAuthAlert('Authentication was cancelled.', 'info');
             });
         }
 
@@ -379,72 +672,6 @@ class SundayApp {
                 this.setAuthAlert('Sunday AI is in secured standby mode.', 'info');
                 this.appendMessage('assistant', '[System Notice] Dashboard is in standby mode. Commands are locked until verified.');
             });
-        }
-    }
-
-    /* -------------------------------------------------------------------------- */
-    /* AUTHENTICATION WORKFLOWS                                                   */
-    /* -------------------------------------------------------------------------- */
-    async triggerFaceLogin() {
-        this.setAuthAlert('Camera active. Scanning for authorized face... (Look at camera or press Q in window to cancel)', 'scanning', true);
-        if (this.dom.btnFaceLogin) this.dom.btnFaceLogin.disabled = true;
-
-        try {
-            const res = await fetch('/api/auth/face-login', { method: 'POST' });
-            const data = await res.json();
-
-            if (res.ok && data.success) {
-                this.setAuthAlert(`ACCESS GRANTED: Welcome, ${data.user}!`, 'success', false);
-                this.appendMessage('assistant', `ACCESS GRANTED: Biometric authentication verified for ${data.user}. Sunday command console unlocked.`);
-                
-                setTimeout(() => {
-                    this.updateAuthUI(true, data.user);
-                }, 600);
-            } else {
-                this.setAuthAlert(data.message || data.detail || 'Face verification cancelled or unrecognized.', 'error', false);
-            }
-        } catch (err) {
-            this.setAuthAlert(`Connection error: ${err.message}`, 'error', false);
-        } finally {
-            if (this.dom.btnFaceLogin) this.dom.btnFaceLogin.disabled = false;
-        }
-    }
-
-    async triggerFaceRegistration() {
-        const username = this.dom.registerNameInput ? this.dom.registerNameInput.value.trim() : '';
-        if (!username) {
-            this.setAuthAlert('Please enter a valid profile name.', 'error');
-            return;
-        }
-
-        this.setAuthAlert(`Starting camera registration for "${username}". Look at camera and press SPACE on camera window to capture 5 photos.`, 'scanning', true);
-        if (this.dom.btnStartRegister) this.dom.btnStartRegister.disabled = true;
-
-        try {
-            const res = await fetch('/api/auth/register-face', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: username })
-            });
-
-            const data = await res.json();
-            if (res.ok && data.success) {
-                this.setAuthAlert(`Registration successful for "${username}"! You can now log in.`, 'success', false);
-                this.appendMessage('assistant', `Face profile registered for "${username}". Encodings updated in memory.`);
-                
-                setTimeout(() => {
-                    this.dom.authRegisterView.style.display = 'none';
-                    this.dom.authOptionsView.style.display = 'flex';
-                    if (this.dom.registerNameInput) this.dom.registerNameInput.value = '';
-                    this.fetchSystemStatus();
-                }, 1200);
-            } else {
-                this.setAuthAlert(data.message || data.detail || 'Face registration was cancelled or failed.', 'error', false);
-            }
-        } catch (err) {
-            this.setAuthAlert(`Registration error: ${err.message}`, 'error', false);
-        } finally {
-            if (this.dom.btnStartRegister) this.dom.btnStartRegister.disabled = false;
         }
     }
 
@@ -550,7 +777,7 @@ class SundayApp {
             // Disable command form
             if (this.dom.commandForm) this.dom.commandForm.classList.add('disabled');
             if (this.dom.commandInput) {
-                this.dom.commandInput.placeholder = 'Console locked. Authenticate via Face Recognition or select profile...';
+                this.dom.commandInput.placeholder = 'Console locked. Authenticate via Face ID or select profile...';
             }
         }
     }
@@ -587,7 +814,6 @@ class SundayApp {
 
             const data = await response.json();
             if (response.ok && data.success) {
-                // If websocket is offline or hasn't handled it, append directly
                 if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
                     this.appendMessage('assistant', data.response);
                 }

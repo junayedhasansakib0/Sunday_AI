@@ -429,7 +429,7 @@
                     <div class="register-step">01</div>
                     <div>
                         <h3>Create a face profile</h3>
-                        <p>Name this trusted user. Sunday will open the webcam to capture 5 reference images.</p>
+                        <p>Name this trusted user. Sunday will open your browser webcam to capture 5 reference photos.</p>
                     </div>
                 </div>
                 <div class="register-input-group">
@@ -437,16 +437,53 @@
                     <div class="register-field-row">
                         <input type="text" id="register-name-input" placeholder="e.g. Sakib" autocomplete="off">
                         <button class="btn-hud btn-capture" id="btn-start-registration" type="button">
-                            Start capture
+                            Open Camera &amp; Capture
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
                         </button>
                     </div>
                 </div>
                 <div class="capture-note">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                    Camera permission required. Press Space on camera window to capture each image.
+                    Allow browser camera permission when prompted.
                 </div>
             </div>
+
+            <!-- In-Browser Webcam View -->
+            <div class="auth-camera-view" id="auth-camera-view" style="display: none;">
+                <div class="camera-feed-container">
+                    <video id="webcam-video" class="camera-video" autoplay playsinline muted></video>
+                    <canvas id="webcam-overlay" class="camera-overlay-canvas"></canvas>
+                    <canvas id="webcam-snapshot" style="display: none;"></canvas>
+                    <div class="scanner-laser" id="scanner-laser"></div>
+                    <div class="scanner-hud-reticle"></div>
+                    <div class="camera-status-pill" id="camera-status-pill">
+                        <span class="cam-dot"></span>
+                        <span id="camera-status-pill-text">LIVE SCANNER</span>
+                    </div>
+                </div>
+
+                <div class="camera-actions-row">
+                    <button class="btn-back-link" id="btn-stop-camera" type="button">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                        Cancel &amp; Close Camera
+                    </button>
+
+                    <!-- Registration shot counter & manual trigger -->
+                    <div id="camera-reg-controls" style="display: none; align-items: center; gap: 10px;">
+                        <div class="capture-progress-dots" id="capture-dots">
+                            <span class="capture-dot" id="dot-1">1</span>
+                            <span class="capture-dot" id="dot-2">2</span>
+                            <span class="capture-dot" id="dot-3">3</span>
+                            <span class="capture-dot" id="dot-4">4</span>
+                            <span class="capture-dot" id="dot-5">5</span>
+                        </div>
+                        <button class="btn-hud btn-capture" id="btn-take-snapshot" type="button">
+                            Capture Shot (<span id="current-shot-num">1</span>/5)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
 
             <div class="modal-footer">
                 <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/></svg> Biometric Secure Gateway</span>

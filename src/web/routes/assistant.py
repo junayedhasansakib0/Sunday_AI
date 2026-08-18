@@ -28,10 +28,17 @@ async def execute_command(req: CommandRequest, request: Request):
     if not command_text:
         raise HTTPException(status_code=400, detail="Command cannot be empty.")
 
+    assistant_state = getattr(request.app.state, "assistant_state", None)
+    if not assistant_state or not assistant_state.is_authenticated:
+        raise HTTPException(
+            status_code=401,
+            detail="Access Denied: Session is locked. Please authenticate using Face Recognition (Option 1)."
+        )
+
     command_processor: CommandProcessor = getattr(request.app.state, "command_processor", None)
     if not command_processor:
         # Fallback instant instance
-        command_processor = CommandProcessor(state=getattr(request.app.state, "assistant_state", None))
+        command_processor = CommandProcessor(state=assistant_state)
 
     try:
         # Execute through core CommandProcessor

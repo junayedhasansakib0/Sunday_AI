@@ -259,6 +259,96 @@
         </main>
     </div>
 
+    <!-- ========================================== -->
+    <!-- 3-OPTION AUTHENTICATION GATEWAY MODAL      -->
+    <!-- ========================================== -->
+    <div class="auth-modal-overlay" id="auth-modal-overlay">
+        <div class="auth-modal-card">
+            <div class="auth-modal-header">
+                <div class="modal-shield-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        <circle cx="12" cy="11" r="3"/>
+                    </svg>
+                </div>
+                <h2>SUNDAY AI BIOMETRIC GATEWAY</h2>
+                <p class="modal-tagline">Access Restricted • Biometric Verification Required</p>
+            </div>
+
+            <!-- Real-time Status Alert inside Modal -->
+            <div class="auth-alert" id="auth-modal-alert">
+                <div class="alert-spinner" id="auth-spinner" style="display: none;"></div>
+                <span id="auth-alert-text">Select an option to proceed:</span>
+            </div>
+
+            <!-- 3 Authentication Options -->
+            <div class="auth-options-container" id="auth-options-view">
+                <!-- Option 1: Face Login -->
+                <button class="auth-option-btn primary" id="btn-opt-face-login">
+                    <div class="btn-opt-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                            <circle cx="12" cy="13" r="4"/>
+                        </svg>
+                    </div>
+                    <div class="btn-opt-text">
+                        <span class="opt-num">OPTION 1</span>
+                        <span class="opt-label">Login with Face Recognition</span>
+                        <span class="opt-desc">Scans webcam for authorized user biometric profile</span>
+                    </div>
+                    <div class="btn-opt-arrow">➔</div>
+                </button>
+
+                <!-- Option 2: Register Face -->
+                <button class="auth-option-btn" id="btn-opt-register-face">
+                    <div class="btn-opt-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="8.5" cy="7" r="4"/>
+                            <line x1="20" y1="8" x2="20" y2="14"/>
+                            <line x1="23" y1="11" x2="17" y2="11"/>
+                        </svg>
+                    </div>
+                    <div class="btn-opt-text">
+                        <span class="opt-num">OPTION 2</span>
+                        <span class="opt-label">Register New Face</span>
+                        <span class="opt-desc">Capture 5 webcam photos to add a new authorized face</span>
+                    </div>
+                    <div class="btn-opt-arrow">➔</div>
+                </button>
+
+                <!-- Option 3: Lock / Standby -->
+                <button class="auth-option-btn danger" id="btn-opt-standby">
+                    <div class="btn-opt-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                    </div>
+                    <div class="btn-opt-text">
+                        <span class="opt-num">OPTION 3</span>
+                        <span class="opt-label">Lock / Standby Mode</span>
+                        <span class="opt-desc">Keep Sunday AI locked in secure sensor monitor state</span>
+                    </div>
+                    <div class="btn-opt-arrow">➔</div>
+                </button>
+            </div>
+
+            <!-- Option 2 Sub-view: Name Input for Face Registration -->
+            <div class="auth-register-form" id="auth-register-view" style="display: none;">
+                <h3>Register New Face Profile</h3>
+                <p>Enter the username to associate with this biometric profile. The webcam will open to capture 5 photos.</p>
+                <div class="register-input-group">
+                    <input type="text" id="register-name-input" placeholder="e.g. Vantorix" autocomplete="off">
+                    <button class="btn-hud" id="btn-start-registration">
+                        <span>START CAPTURE</span>
+                    </button>
+                </div>
+                <button class="btn-back-link" id="btn-cancel-registration">← Back to Options</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Client Logic -->
     <script src="/static/js/app.js"></script>
 </body>

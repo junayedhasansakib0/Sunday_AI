@@ -9,9 +9,12 @@ from dotenv import load_dotenv
 
 from src.assistant.state import AssistantState
 from src.assistant.command_processor import CommandProcessor
+from src.authentication import AuthenticationManager
+from src.face_recognition import FaceRecognizer
 from src.ai.brain import AIBrain
 from src.web.routes.system import router as system_router
 from src.web.routes.assistant import router as assistant_router
+from src.web.routes.auth import router as auth_router
 from src.web.routes.ws import router as ws_router
 
 # Load environment variables
@@ -62,16 +65,21 @@ def create_app() -> FastAPI:
 
     # Initialize Core Shared State & Processors
     assistant_state = AssistantState()
+    auth_manager = AuthenticationManager()
+    face_recognizer = FaceRecognizer()
     ai_brain = AIBrain()
     command_processor = CommandProcessor(state=assistant_state, brain=ai_brain)
 
     app.state.assistant_state = assistant_state
+    app.state.auth_manager = auth_manager
+    app.state.face_recognizer = face_recognizer
     app.state.ai_brain = ai_brain
     app.state.command_processor = command_processor
 
     # Include API & WebSocket Routers
     app.include_router(system_router)
     app.include_router(assistant_router)
+    app.include_router(auth_router)
     app.include_router(ws_router)
 
     # Dashboard Homepage Route

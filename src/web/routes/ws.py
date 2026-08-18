@@ -37,6 +37,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif event_type == "command":
                     command_text = msg.get("data", {}).get("command", "").strip()
                     if command_text:
+                        if not state or not state.is_authenticated:
+                            await ws_manager.send_personal_message({
+                                "event": "error",
+                                "data": {
+                                    "detail": "Access Denied: Authentication required. Please log in with Face Recognition."
+                                }
+                            }, websocket)
+                            continue
+
                         command_processor: CommandProcessor = getattr(websocket.app.state, "command_processor", None)
                         if not command_processor:
                             command_processor = CommandProcessor(state=state)

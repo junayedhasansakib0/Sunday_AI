@@ -1,0 +1,14 @@
+opencv-python
+numpy
+# face-recognition
+python-dotenv
+SpeechRecognition
+PyAudio
+pyttsx3
+requests
+openai
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+websockets

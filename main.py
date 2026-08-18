@@ -4,6 +4,7 @@ import os
 from src.face_recognition import FaceRecognizer
 from src.authentication import AuthenticationManager
 from src.assistant.command_processor import CommandProcessor
+from src.assistant.voice.voice_controller import VoiceController
 from src.assistant.state import AssistantState
 from register_face import register_face
 
@@ -117,10 +118,17 @@ def run_command_console(state: AssistantState, auth_manager: AuthenticationManag
     """
     command_processor = CommandProcessor(state=state)
 
+    # ── Start Voice Controller (Phase 06) ────────────────────
+    voice_controller = VoiceController(
+        state=state,
+        command_processor=command_processor,
+    )
+    voice_controller.start()
+
     print("\n" + "=" * 55)
     print(f"       SUNDAY AI - ACCESS GRANTED: Welcome, {state.current_user}!")
     print("=" * 55)
-    print("Type 'help' for available commands.")
+    print("Type or speak commands. Say 'help' for available commands.")
     print("Type 'logout' to lock session and return to Main Menu.")
     print("Type 'exit' to shut down Sunday.")
     print("=" * 55 + "\n")
@@ -134,6 +142,7 @@ def run_command_console(state: AssistantState, auth_manager: AuthenticationManag
 
             if user_input.lower() in ["exit", "quit"]:
                 print("[SYSTEM] Shutting down Sunday...")
+                voice_controller.stop()
                 state.stop()
                 break
 
@@ -141,11 +150,13 @@ def run_command_console(state: AssistantState, auth_manager: AuthenticationManag
             print(f"Sunday: {response}\n")
 
             if user_input.lower() == "logout":
+                voice_controller.stop()
                 auth_manager.logout()
                 break
 
         except (EOFError, KeyboardInterrupt):
             print("\n[SYSTEM] Session interrupted.")
+            voice_controller.stop()
             state.logout()
             auth_manager.logout()
             break

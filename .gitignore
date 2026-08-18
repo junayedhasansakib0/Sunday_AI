@@ -11,4 +11,4 @@ venv/
 env/
 
 # Data & Logs
-data/logs/*.log
+data/

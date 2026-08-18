@@ -3,7 +3,7 @@ numpy
 # face-recognition
 python-dotenv
 SpeechRecognition
-PyAudio
+PyAudioWPatch
 pyttsx3
 requests
 openai

@@ -10,5 +10,15 @@ venv/
 .venv/
 env/
 
-# Data & Logs
+# Data & Biometrics (Face Data, Embeddings, Logs)
 data/
+data/faces/
+data/faces/**
+faces/
+*.pkl
+*.pickle
+*.npy
+*.npz
+
+# Scratch & Temporary Files
+scratch/

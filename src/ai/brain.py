@@ -15,7 +15,7 @@ class AIBrain:
 
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = model or os.getenv("AI_MODEL", "gemini-3.6-flash")
+        self.model = model or os.getenv("AI_MODEL", "gemini-1.5-flash")
         self.session = requests.Session()
         self.system_prompt = (
             "You are Sunday, a smart, polite, and helpful desktop AI personal assistant. "
@@ -35,10 +35,10 @@ class AIBrain:
                 "Please configure GEMINI_API_KEY in your .env file."
             )
 
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
-            f"?key={self.api_key}"
-        )
+        # Primary and fallback models
+        models_to_try = [self.model]
+        if "gemini-1.5-flash" not in models_to_try:
+            models_to_try.append("gemini-1.5-flash")
 
         payload = {
             "contents": [
@@ -52,14 +52,19 @@ class AIBrain:
             },
             "generationConfig": {
                 "temperature": 0.7,
-                "maxOutputTokens": 1000
+                "maxOutputTokens": 800
             }
         }
 
-        # Try up to 2 times in case of transient network hiccups
-        for attempt in range(2):
+        last_error = None
+        for model_name in models_to_try:
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+                f"?key={self.api_key}"
+            )
+
             try:
-                response = self.session.post(url, json=payload, timeout=25)
+                response = self.session.post(url, json=payload, timeout=8)
 
                 if response.status_code == 200:
                     data = response.json()
@@ -71,20 +76,13 @@ class AIBrain:
                     return "I received an empty response from the AI model."
 
                 error_data = response.json().get("error", {})
-                error_msg = error_data.get("message", response.text)
-                return f"[AI Error] ({response.status_code}): {error_msg}"
+                last_error = error_data.get("message", response.text)
 
             except requests.exceptions.Timeout:
-                if attempt == 0:
-                    continue
-                return "[AI Error] Request timed out. Please check your network connection."
-
+                last_error = "AI request timed out. Please try again."
             except requests.exceptions.RequestException as e:
-                if attempt == 0:
-                    continue
-                return f"[AI Error] Network error: {e}"
-
+                last_error = f"Network error: {e}"
             except Exception as e:
-                return f"[AI Error] An unexpected error occurred: {e}"
+                last_error = f"An error occurred: {e}"
 
-        return "[AI Error] Unable to reach Gemini API after retrying."
+        return f"[AI Response Notice] {last_error}" if last_error else "AI service currently unavailable."
